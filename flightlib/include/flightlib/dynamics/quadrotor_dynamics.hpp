@@ -28,6 +28,7 @@ class QuadrotorDynamics : DynamicsBase {
   // help functions
   bool valid() const;
   bool updateParams(const YAML::Node& params);
+  double getMaxThrust();
 
   // Helpers to apply limits.
   Vector<4> clampThrust(const Vector<4> thrusts) const;
@@ -43,6 +44,8 @@ class QuadrotorDynamics : DynamicsBase {
   Vector<4> motorOmegaToThrust(const Vector<4>& omega) const;
   Vector<4> motorThrustToOmega(const Vector<4>& thrusts) const;
   Matrix<4, 4> getAllocationMatrix() const;
+  Scalar motor_tau_up_inv_;
+  Scalar motor_tau_down_inv_;
 
   //
   inline Scalar getMass(void) const { return mass_; };
@@ -54,6 +57,7 @@ class QuadrotorDynamics : DynamicsBase {
   bool setMass(const Scalar mass);
   bool setArmLength(const Scalar arm_length);
   bool setMotortauInv(const Scalar tau_inv);
+  Scalar motor_omega_max_;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QuadrotorDynamics& quad_dymaics);
@@ -62,14 +66,16 @@ class QuadrotorDynamics : DynamicsBase {
   bool updateInertiaMarix();
   Scalar mass_;
   Scalar arm_l_;
+  Scalar init_mass_;
   Matrix<3, 4> t_BM_;
   Matrix<3, 3> J_;
   Matrix<3, 3> J_inv_;
 
   // motors
   Scalar motor_omega_min_;
-  Scalar motor_omega_max_;
+  
   Scalar motor_tau_inv_;
+  
 
   // Propellers
   Vector<3> thrust_map_;

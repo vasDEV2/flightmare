@@ -13,6 +13,7 @@ QuadrotorEnv::QuadrotorEnv(const std::string &cfg_path)
     lin_vel_coeff_(0.0),
     ang_vel_coeff_(0.0),
     act_coeff_(0.0),
+    prev_omega_act_(Vector<3>::Zero()),
     goal_state_((Vector<quadenv::kNObs>() << 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0,
                  0.0, 0.0, 0.0, 0.0, 0.0)
                   .finished()) {
@@ -24,6 +25,7 @@ QuadrotorEnv::QuadrotorEnv(const std::string &cfg_path)
   QuadrotorDynamics dynamics;
   dynamics.updateParams(cfg_);
   quadrotor_ptr_->updateDynamics(dynamics);
+  max_thrust = dynamics.getMaxThrust();
 
   // define a bounding box
   world_box_ << -20, 20, -20, 20, 0, 20;
@@ -36,8 +38,13 @@ QuadrotorEnv::QuadrotorEnv(const std::string &cfg_path)
   act_dim_ = quadenv::kNAct;
 
   Scalar mass = quadrotor_ptr_->getMass();
-  act_mean_ = Vector<quadenv::kNAct>::Ones() * (-mass * Gz) / 4;
-  act_std_ = Vector<quadenv::kNAct>::Ones() * (-mass * 2 * Gz) / 4;
+  // act_mean_ = Vector<quadenv::kNAct>::Ones() * (-mass * Gz) / 4;
+  act_mean_ = Vector<quadenv::kNAct>::Ones() * (-Gz);
+  // act_std_ = Vector<quadenv::kNAct>::Ones() * (-mass * 2 * Gz) / 4;
+  act_std_ = Vector<quadenv::kNAct>::Ones() * (-2 * Gz);
+  // max_thrust = (-mass * Gz)*3f;
+
+  std::cout<<"MASS::"<<mass<<std::endl;
 
   // load parameters
   loadParam(cfg_);
@@ -49,31 +56,56 @@ bool QuadrotorEnv::reset(Ref<Vector<>> obs, const bool random) {
   quad_state_.setZero();
   quad_act_.setZero();
 
+  // std::cout<<"HI I AM RESETTING";
+
   if (random) {
     // randomly reset the quadrotor state
-    // reset position
-    quad_state_.x(QS::POSX) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::POSY) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::POSZ) = uniform_dist_(random_gen_) + 5;
-    if (quad_state_.x(QS::POSZ) < -0.0)
-      quad_state_.x(QS::POSZ) = -quad_state_.x(QS::POSZ);
-    // reset linear velocity
-    quad_state_.x(QS::VELX) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::VELY) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::VELZ) = uniform_dist_(random_gen_);
-    // reset orientation
-    quad_state_.x(QS::ATTW) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::ATTX) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::ATTY) = uniform_dist_(random_gen_);
-    quad_state_.x(QS::ATTZ) = uniform_dist_(random_gen_);
-    quad_state_.qx /= quad_state_.qx.norm();
+    // reset
+    static std::random_device rd;            // non-deterministic seed
+    static std::mt19937 gen(rd());            // Mersenne Twister RNG
+    static std::uniform_real_distribution<Scalar> dist(-5, 5);
+    // static std::uniform_real_distribution<Scalar> dist2(-3.14, 3.14);
+
+      // Eigen::Quaterniond q = Eigen::AngleAxisd(dist2(gen),   Eigen::Vector3d::UnitZ()) *
+      // Eigen::AngleAxisd(dist(gen), Eigen::Vector3d::UnitY()) *
+      // Eigen::AngleAxisd(dist(gen),  Eigen::Vector3d::UnitX());
+
+      // q.normalize();
+
+
+      
+      // std::cout<<"HI EVERYTHING IS RANDOM";
+      quad_state_.x(QS::POSX) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::POSY) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::POSZ) = uniform_dist_(random_gen_) + 5;
+      if (quad_state_.x(QS::POSZ) < -0.0)
+        quad_state_.x(QS::POSZ) = -quad_state_.x(QS::POSZ);
+      // reset linear velocity
+      quad_state_.x(QS::VELX) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::VELY) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::VELZ) = uniform_dist_(random_gen_); 
+      // reset orientation
+      quad_state_.x(QS::ATTW) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::ATTX) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::ATTY) = uniform_dist_(random_gen_);
+      quad_state_.x(QS::ATTZ) = uniform_dist_(random_gen_);
+      // quad_state_.x(QS::ATTW) = q.w();
+      // quad_state_.x(QS::ATTX) = q.x();
+      // quad_state_.x(QS::ATTY) = q.y();
+      // quad_state_.x(QS::ATTZ) = q.z();
+      
+      quad_state_.qx /= quad_state_.qx.norm();
   }
   // reset quadrotor with random states
   quadrotor_ptr_->reset(quad_state_);
+  quadrotor_ptr_->massrandomization();
 
   // reset control command
   cmd_.t = 0.0;
-  cmd_.thrusts.setZero();
+  // cmd_.thrusts.setZero();
+  cmd_.collective_thrust = 0.0;
+  cmd_.omega.setZero();
+  yaw_integral_ = 0;
 
   // obtain observations
   getObs(obs);
@@ -85,18 +117,37 @@ bool QuadrotorEnv::getObs(Ref<Vector<>> obs) {
 
   // convert quaternion to euler angle
   Vector<3> euler_zyx = quad_state_.q().toRotationMatrix().eulerAngles(2, 1, 0);
+  // Vector<4> quat_zyx = quad_state_.q()
+  Vector<4> quat_zyx;
+  quat_zyx << quad_state_.q().w(),
+          quad_state_.q().x(),
+          quad_state_.q().y(),
+          quad_state_.q().z();
+  Eigen::Matrix3f R = quad_state_.q().toRotationMatrix().cast<float>();
+  Vector<9> rot_vec = Eigen::Map<Vector<9>>(R.data());
   // quaternionToEuler(quad_state_.q(), euler);
-  quad_obs_ << quad_state_.p, euler_zyx, quad_state_.v, quad_state_.w;
+  euler_ = euler_zyx;
+  // euler_[0] = 0.0;
+  pos1_ = quad_state_.p;
+  vel1_ = quad_state_.v;
+  quad_obs_ << quad_state_.p/10, rot_vec, quad_state_.v/10, quad_state_.w, yaw_integral_;
 
   obs.segment<quadenv::kNObs>(quadenv::kObs) = quad_obs_;
   return true;
 }
 
 Scalar QuadrotorEnv::step(const Ref<Vector<>> act, Ref<Vector<>> obs) {
-  quad_act_ = act.cwiseProduct(act_std_) + act_mean_;
-  cmd_.t += sim_dt_;
-  cmd_.thrusts = quad_act_;
+  // std::cout<<"COLLECTIVE THRUST"<<act<<std::endl;
 
+  // quad_act_ = act.cwiseProduct(act_std_) + act_mean_;
+  cmd_.t += sim_dt_;
+  // cmd_.thrusts = quad_act_;
+  cmd_.collective_thrust = act[0] + 9.81;
+  // std::cout<<"c1: "<<cmd_.collective_thrust<<std::endl;
+  // cmd_.collective_thrust = quad_act_[0];
+  // cmd_.collective_thrust = act[0]*3.0f + 9.81;
+  cmd_.omega << act[1]*5, act[2]*5, act[3];
+  // std::cout<<cmd._omega<<std::endl;
   // simulate quadrotor
   quadrotor_ptr_->run(cmd_, sim_dt_);
 
@@ -106,19 +157,20 @@ Scalar QuadrotorEnv::step(const Ref<Vector<>> act, Ref<Vector<>> obs) {
   Matrix<3, 3> rot = quad_state_.q().toRotationMatrix();
 
   // ---------------------- reward function design
-  // - position tracking
+  // - position tracking  
   Scalar pos_reward =
-    pos_coeff_ * (quad_obs_.segment<quadenv::kNPos>(quadenv::kPos) -
+    pos_coeff_ * (pos1_ -
                   goal_state_.segment<quadenv::kNPos>(quadenv::kPos))
                    .squaredNorm();
+  // std::cout<<"POS: "<<quad_obs_.segment<quadenv::kNPos>(quadenv::kPos)<<std::endl;
   // - orientation tracking
   Scalar ori_reward =
-    ori_coeff_ * (quad_obs_.segment<quadenv::kNOri>(quadenv::kOri) -
+    ori_coeff_ * (euler_ -
                   goal_state_.segment<quadenv::kNOri>(quadenv::kOri))
                    .squaredNorm();
   // - linear velocity tracking
   Scalar lin_vel_reward =
-    lin_vel_coeff_ * (quad_obs_.segment<quadenv::kNLinVel>(quadenv::kLinVel) -
+    lin_vel_coeff_ * (vel1_ -
                       goal_state_.segment<quadenv::kNLinVel>(quadenv::kLinVel))
                        .squaredNorm();
   // - angular velocity tracking
@@ -126,16 +178,27 @@ Scalar QuadrotorEnv::step(const Ref<Vector<>> act, Ref<Vector<>> obs) {
     ang_vel_coeff_ * (quad_obs_.segment<quadenv::kNAngVel>(quadenv::kAngVel) -
                       goal_state_.segment<quadenv::kNAngVel>(quadenv::kAngVel))
                        .squaredNorm();
+  
+  // Scalar yaw_dikkat = yaw_coeff_*(euler_[0] - 0)*(euler_[0] - 0);
+  Scalar yaw_dikkat = yaw_coeff_*(yaw_integral_*yaw_integral_);
+
+  Scalar change_penalty = omega_coeff_*((cmd_.omega - prev_omega_act_).squaredNorm());
+  
+  // prev_omega_act_ = cmd_.omega;
 
   // - control action penalty
   Scalar act_reward = act_coeff_ * act.cast<Scalar>().norm();
 
   Scalar total_reward =
-    pos_reward + ori_reward + lin_vel_reward + ang_vel_reward + act_reward;
+    pos_reward + ori_reward + lin_vel_reward + ang_vel_reward + act_reward + change_penalty + yaw_dikkat;
+  // Scalar total_reward =ori_reward;
+  // std::cout<<euler_ -goal_state_.segment<quadenv::kNOri>(quadenv::kOri)<<std::endl;
 
   // survival reward
   total_reward += 0.1;
-
+  // std::cout<<"total reward:"<<total_reward<<std::endl;
+  yaw_integral_ += euler_[0]*sim_dt_;
+  
   return total_reward;
 }
 
@@ -163,6 +226,8 @@ bool QuadrotorEnv::loadParam(const YAML::Node &cfg) {
     lin_vel_coeff_ = cfg["rl"]["lin_vel_coeff"].as<Scalar>();
     ang_vel_coeff_ = cfg["rl"]["ang_vel_coeff"].as<Scalar>();
     act_coeff_ = cfg["rl"]["act_coeff"].as<Scalar>();
+    omega_coeff_ = cfg["rl"]["omega_coeff"].as<Scalar>();
+    yaw_coeff_ = cfg["rl"]["yaw_coeff"].as<Scalar>();
   } else {
     return false;
   }

@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.gridspec as gridspec
+from scipy.spatial.transform import Rotation as R
 
 
 def test_model(env, model, render=False):
@@ -30,25 +31,47 @@ def test_model(env, model, render=False):
     ax_action3 = fig.add_subplot(gs[4, 9:12])
 
     max_ep_length = env.max_episode_steps
-    num_rollouts = 5
+    # max_ep_length = 1500
+    num_rollouts = 1
     if render:
         env.connectUnity()
     for n_roll in range(num_rollouts):
         pos, euler, dpos, deuler = [], [], [], []
         actions = []
+        rewards = []
+        action_collector = []
         obs, done, ep_len = env.reset(), False, 0
+        i = 0
         while not (done or (ep_len >= max_ep_length)):
+            i += 1
+            # go = np.array([0, 0, 5])
+            # obs[:, 0:3] = go - obs[:, 0:3]
             act, _ = model.predict(obs, deterministic=True)
+            action_collector.append(act[0, :].tolist())
+            # act[0, 1] = 0.0
+            # act[0, 3] = 0.0
+            print(f"The Observations are: {obs}")
+            print(f"THE ACTIONS ARE: {act}")
             obs, rew, done, infos = env.step(act)
+            rewards.append(rew)
             #
             ep_len += 1
             #
             pos.append(obs[0, 0:3].tolist())
-            dpos.append(obs[0, 6:9].tolist())
-            euler.append(obs[0, 3:6].tolist())
-            deuler.append(obs[0, 9:12].tolist())
-            #
+            dpos.append(obs[0, 12:15].tolist()) 
+            mtrx = obs[0, 3:12].reshape(3, 3, order='F')  # Fortran = column-major
+            eu = R.from_matrix(mtrx).as_euler("zyx")
+            # euler.append(obs[0, 3:6].tolist())
+            euler.append(eu.tolist())
+            deuler.append(obs[0, 15:18].tolist())
+            # euler.append(eu.tolist())
             actions.append(act[0, :].tolist())
+        # print(i)
+        action_collector = np.array(action_collector)
+        np.save("actions_anh.npy", action_collector)
+        print(sum(rewards))
+        print(rewards)
+        print(action_collector.shape)
         pos = np.asarray(pos)
         dpos = np.asarray(dpos)
         euler = np.asarray(euler)
@@ -72,16 +95,16 @@ def test_model(env, model, render=False):
         #
         ax_euler_x.step(t, euler[:, -1], color="C{0}".format(
             n_roll), label="trail: {0}".format(n_roll))
-        ax_euler_y.step(t, euler[:, 0], color="C{0}".format(
+        ax_euler_y.step(t, euler[:, 1], color="C{0}".format(
             n_roll), label="trail :{0}".format(n_roll))
-        ax_euler_z.step(t, euler[:, 1], color="C{0}".format(
+        ax_euler_z.step(t, euler[:, 0], color="C{0}".format(
             n_roll), label="trail: {0}".format(n_roll))
         #
-        ax_euler_vx.step(t, deuler[:, -1], color="C{0}".format(
+        ax_euler_vx.step(t, deuler[:, 0], color="C{0}".format(
             n_roll), label="trail: {0}".format(n_roll))
-        ax_euler_vy.step(t, deuler[:, 0], color="C{0}".format(
+        ax_euler_vy.step(t, deuler[:, 1], color="C{0}".format(
             n_roll), label="trail :{0}".format(n_roll))
-        ax_euler_vz.step(t, deuler[:, 1], color="C{0}".format(
+        ax_euler_vz.step(t, deuler[:, 2], color="C{0}".format(
             n_roll), label=r"$\theta$ [x, y, z] -- trail: {0}".format(n_roll))
         #
         ax_action0.step(t, actions[:, 0], color="C{0}".format(

@@ -64,8 +64,10 @@ class CMakeBuild(build_ext):
         # required for auto-detection of auxiliary "native" libs
         if not extdir.endswith(os.path.sep):
             extdir += os.path.sep
+        pybind11_path = "/home/vasudevan/miniconda3/envs/rlmare/lib/python3.7/site-packages/pybind11/share/cmake/pybind11"
         cmake_args = ['-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=' + extdir,
-                      '-DPYTHON_EXECUTABLE=' + sys.executable]
+                    '-DPYTHON_EXECUTABLE=' + sys.executable,
+                    '-DCMAKE_PREFIX_PATH=' + pybind11_path]
 
         cfg = 'Debug' if self.debug else 'Release'
         build_args = ['--config', cfg]

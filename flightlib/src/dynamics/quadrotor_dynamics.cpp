@@ -11,15 +11,19 @@ QuadrotorDynamics::QuadrotorDynamics(const Scalar mass, const Scalar arm_l)
     J_(mass / 12.0 * arm_l * arm_l * Vector<3>(4.5, 4.5, 7).asDiagonal()),
     J_inv_(J_.inverse()),
     motor_omega_min_(150.0),
-    motor_omega_max_(2000.0),
+    motor_omega_max_(1000.0),
     motor_tau_inv_(1.0 / 0.05),
     thrust_map_(1.3298253500372892e-06, 0.0038360810526746033,
                 -1.7689986848125325),
     kappa_(0.016),
     thrust_min_(0.0),
-    thrust_max_(motor_omega_max_ * motor_omega_max_ * thrust_map_(0) +
-                motor_omega_max_ * thrust_map_(1) + thrust_map_(2)),
-    omega_max_(Vector<3>::Constant(6.0)) {}
+    // thrust_max_(motor_omega_max_ * motor_omega_max_ * thrust_map_(0) +
+                // motor_omega_max_ * thrust_map_(1) + thrust_map_(2)),
+    thrust_max_(motor_omega_max_ * motor_omega_max_ * 8.54858e-6),
+    omega_max_(Vector<3>::Constant(6.0)) {
+      std::cout<<"J MATRX START: "<<J_<<std::endl;
+      std::cout<<"MAX THRUST: "<<thrust_max_<<std::endl;
+    }
 
 QuadrotorDynamics::~QuadrotorDynamics() {}
 
@@ -87,12 +91,16 @@ bool QuadrotorDynamics::valid() const {
   return check;
 }
 
+double QuadrotorDynamics::getMaxThrust(){
+  return thrust_max_;
+}
+
 Vector<4> QuadrotorDynamics::clampThrust(const Vector<4> thrusts) const {
-  return thrusts.cwiseMax(thrust_min_).cwiseMin(thrust_max_);
+  return thrusts.cwiseMax(thrust_min_).cwiseMin(17.08);
 }
 
 Scalar QuadrotorDynamics::clampThrust(const Scalar thrust) const {
-  return std::clamp(thrust, thrust_min_, thrust_max_);
+  return std::clamp(thrust, thrust_min_, 17.08f);
 }
 
 Vector<4> QuadrotorDynamics::clampMotorOmega(const Vector<4>& omega) const {
@@ -133,7 +141,10 @@ bool QuadrotorDynamics::setMass(const Scalar mass) {
   if (mass < 0.0 || mass >= 100.) {
     return false;
   }
-  mass_ = mass;
+  
+  auto mass_update = mass + init_mass_;
+
+  mass_ = mass_update;
   // update inertial matrix and its inverse
   updateInertiaMarix();
   return true;
@@ -161,6 +172,7 @@ bool QuadrotorDynamics::updateParams(const YAML::Node& params) {
   if (params["quadrotor_dynamics"]) {
     // load parameters from a yaml configuration file
     mass_ = params["quadrotor_dynamics"]["mass"].as<Scalar>();
+    init_mass_ = params["quadrotor_dynamics"]["mass"].as<Scalar>();
     arm_l_ = params["quadrotor_dynamics"]["arm_l"].as<Scalar>();
     motor_omega_min_ =
       params["quadrotor_dynamics"]["motor_omega_min"].as<Scalar>();
@@ -168,6 +180,10 @@ bool QuadrotorDynamics::updateParams(const YAML::Node& params) {
       params["quadrotor_dynamics"]["motor_omega_max"].as<Scalar>();
     motor_tau_inv_ =
       (1.0 / params["quadrotor_dynamics"]["motor_tau"].as<Scalar>());
+    motor_tau_up_inv_ =
+      (1.0 / params["quadrotor_dynamics"]["motor_tau_up"].as<Scalar>());
+    motor_tau_down_inv_ =
+      (1.0 / params["quadrotor_dynamics"]["motor_tau_down"].as<Scalar>());
     std::vector<Scalar> thrust_map;
     thrust_map =
       params["quadrotor_dynamics"]["thrust_map"].as<std::vector<Scalar>>();

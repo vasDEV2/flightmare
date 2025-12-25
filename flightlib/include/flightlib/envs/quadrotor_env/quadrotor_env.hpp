@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <cmath>
 #include <iostream>
+#include <random>
 
 // yaml cpp
 #include <yaml-cpp/yaml.h>
@@ -29,11 +30,11 @@ enum Ctl : int {
   kNPos = 3,
   kOri = 3,
   kNOri = 3,
-  kLinVel = 6,
+  kLinVel = 12,
   kNLinVel = 3,
-  kAngVel = 9,
+  kAngVel = 15,
   kNAngVel = 3,
-  kNObs = 12,
+  kNObs = 19  ,
   // control actions
   kAct = 0,
   kNAct = 4,
@@ -62,6 +63,7 @@ class QuadrotorEnv final : public EnvBase {
   // - auxiliar functions
   bool isTerminalState(Scalar &reward) override;
   void addObjectsToUnity(std::shared_ptr<UnityBridge> bridge);
+  float max_thrust;
 
   friend std::ostream &operator<<(std::ostream &os,
                                   const QuadrotorEnv &quad_env);
@@ -74,7 +76,7 @@ class QuadrotorEnv final : public EnvBase {
   Logger logger_{"QaudrotorEnv"};
 
   // Define reward for training
-  Scalar pos_coeff_, ori_coeff_, lin_vel_coeff_, ang_vel_coeff_, act_coeff_;
+  Scalar pos_coeff_, ori_coeff_, lin_vel_coeff_, ang_vel_coeff_, act_coeff_, omega_coeff_, yaw_coeff_;
 
   // observations and actions (for RL)
   Vector<quadenv::kNObs> quad_obs_;
@@ -88,9 +90,14 @@ class QuadrotorEnv final : public EnvBase {
   Vector<quadenv::kNAct> act_std_;
   Vector<quadenv::kNObs> obs_mean_ = Vector<quadenv::kNObs>::Zero();
   Vector<quadenv::kNObs> obs_std_ = Vector<quadenv::kNObs>::Ones();
+  Vector<3> euler_;
+  Vector<3> pos1_;
+  Vector<3> vel1_;
+  Scalar yaw_integral_;
 
   YAML::Node cfg_;
   Matrix<3, 2> world_box_;
+  Vector<3> prev_omega_act_;
 };
 
 }  // namespace flightlib

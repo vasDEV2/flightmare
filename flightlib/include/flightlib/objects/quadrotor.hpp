@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdlib.h>
+#include <random>
 
 // flightlib
 #include "flightlib/common/command.hpp"
@@ -10,6 +11,7 @@
 #include "flightlib/objects/object_base.hpp"
 #include "flightlib/sensors/imu.hpp"
 #include "flightlib/sensors/rgb_camera.hpp"
+
 
 namespace flightlib {
 
@@ -48,13 +50,15 @@ class Quadrotor : ObjectBase {
   bool setCommand(const Command& cmd);
   bool updateDynamics(const QuadrotorDynamics& dynamics);
   bool addRGBCamera(std::shared_ptr<RGBCamera> camera);
-
+  void massrandomization();
   // low-level controller
   Vector<4> runFlightCtl(const Scalar sim_dt, const Vector<3>& omega,
                          const Command& cmd);
+                      
 
   // simulate motors
   void runMotors(const Scalar sim_dt, const Vector<4>& motor_thrust_des);
+  Vector<4> getHistory();
 
   // constrain world box
   bool setWorldBox(const Ref<Matrix<3, 2>> box);
@@ -85,6 +89,7 @@ class Quadrotor : ObjectBase {
   Vector<4> motor_thrusts_;
   Matrix<4, 4> B_allocation_;
   Matrix<4, 4> B_allocation_inv_;
+  Vector<4> motor_history_;
 
   // P gain for body-rate control
   const Matrix<3, 3> Kinv_ang_vel_tau_ =

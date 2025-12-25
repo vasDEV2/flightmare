@@ -1,4 +1,5 @@
 #include "flightlib/common/command.hpp"
+#include<iostream>
 
 
 namespace flightlib {
@@ -12,6 +13,7 @@ Command::Command(const Scalar t, const Vector<4>& thrusts)
   : t(t), thrusts(thrusts) {}
 
 bool Command::valid() const {
+  // std::cout<<"here"<<thrusts.allFinite()<<std::endl;
   return std::isfinite(t) &&
          ((std::isfinite(collective_thrust) && omega.allFinite()) ^
           thrusts.allFinite());

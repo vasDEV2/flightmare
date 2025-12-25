@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.5)
 
 project(flightlib VERSION 0.1.0)
 
@@ -43,8 +43,11 @@ endif()
 message(STATUS "Eigen3 include dir: ${EIGEN3_INCLUDE_DIR}")
 
 # Including dependencies 
-include(cmake/pybind11.cmake)
-include(cmake/yaml.cmake)
+find_package(pybind11 REQUIRED)
+find_package(yaml-cpp REQUIRED)
+include_directories(${YAML_CPP_INCLUDE_DIRS})
+# include(cmake/pybind11.cmake)
+# include(cmake/yaml.cmake)
 
 # Including dependencies 
 find_package(OpenCV REQUIRED)
@@ -189,7 +192,9 @@ endif()
 
 # Setup Testing and Benchmark
 if(BUILD_TESTS OR BUILD_BENCH)
-  include(cmake/gtest.cmake)
+  # include(cmake/gtest.cmake)
+  find_package(GTest REQUIRED)
+  include_directories(${GTEST_INCLUDE_DIRS})
   enable_testing()
 endif()
 
